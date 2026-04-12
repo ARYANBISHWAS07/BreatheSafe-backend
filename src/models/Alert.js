@@ -15,16 +15,45 @@ const AlertSchema = new mongoose.Schema(
       type: String,
       enum: [
         'AIR_QUALITY_ALERT',
+        'HEALTH_ALERT',
       ],
       required: true,
       index: true,
     },
+
+    // User classification (for health alerts)
+    classification: {
+      type: String,
+      enum: ['asthma_patient', 'children', 'elderly', 'adults', null],
+      sparse: true,
+      index: true,
+    },
+
+    classificationDisplayName: String,
+
+    // Alert Title (for health alerts)
+    title: String,
 
     // Alert Message
     message: {
       type: String,
       required: true,
     },
+
+    // Recommendations
+    recommendations: String,
+
+    // Potential health effects
+    potentialHealthEffects: [String],
+
+    // Breached metrics
+    breachedMetrics: [
+      {
+        metric: String,
+        value: Number,
+        severity: String
+      }
+    ],
 
     // Trigger Values (for reference and debugging)
     triggerValues: {
@@ -51,6 +80,7 @@ const AlertSchema = new mongoose.Schema(
     riskAssessment: {
       healthImplication: String,
       recommendation: String,
+      affectedClassification: String,
     },
 
     // Alert Status
@@ -95,6 +125,9 @@ AlertSchema.index({ createdAt: -1 });
 AlertSchema.index({ level: 1, createdAt: -1 });
 AlertSchema.index({ isAcknowledged: 1, createdAt: -1 });
 AlertSchema.index({ type: 1, createdAt: -1 });
+AlertSchema.index({ classification: 1, createdAt: -1 });
+AlertSchema.index({ classification: 1, type: 1, createdAt: -1 });
+AlertSchema.index({ classification: 1, isAcknowledged: 1, createdAt: -1 });
 
 AlertSchema.methods.acknowledge = function (acknowledgedBy = 'SYSTEM') {
   this.isAcknowledged = true;

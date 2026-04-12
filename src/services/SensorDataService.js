@@ -5,9 +5,10 @@ const {
 } = require('../utils/analytics');
 
 class SensorDataService {
-  constructor() {
+  constructor(healthAlertService = null) {
     this.analyticsProcessor = new AirQualityAnalyticsProcessor();
     this.lastProcessedData = null;
+    this.healthAlertService = healthAlertService;
   }
 
   async processSensorData(sensorData) {
@@ -43,6 +44,24 @@ class SensorDataService {
 
       const saved = await sensorData.save();
       logger.info(`Sensor data saved: ${saved._id}`);
+
+      // Trigger health alerts for all classifications
+      if (this.healthAlertService) {
+        const alerts = await this.healthAlertService.checkAndGenerateAlerts(
+          processedData,
+          saved._id
+        );
+
+        if (alerts && alerts.length > 0) {
+          logger.info(`Generated ${alerts.length} health alerts`);
+          
+          // Emit alerts via Socket.IO
+          for (const alert of alerts) {
+            this.healthAlertService.emitAlertToClients(alert, alert.classification);
+          }
+        }
+      }
+
       return saved;
     } catch (error) {
       logger.error(`Error saving sensor data: ${error.message}`);
@@ -254,6 +273,10 @@ class SensorDataService {
   resetExposureTracker() {
     this.analyticsProcessor.reset();
     logger.info('Analytics state reset');
+  }
+
+  setHealthAlertService(healthAlertService) {
+    this.healthAlertService = healthAlertService;
   }
 }
 

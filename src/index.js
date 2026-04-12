@@ -21,11 +21,16 @@ const createApp = require('./app');
 const MQTTClient = require('./mqtt/mqttClient');
 const SensorDataService = require('./services/SensorDataService');
 const AlertsService = require('./services/AlertsService');
+const HealthAlertService = require('./services/HealthAlertService');
 const SensorDataController = require('./controllers/SensorDataController');
 const AlertsController = require('./controllers/AlertsController');
+const HealthAlertsController = require('./controllers/HealthAlertsController');
+const UserController = require('./controllers/UserController');
 const SystemController = require('./controllers/SystemController');
 const createSensorDataRoutes = require('./routes/sensorDataRoutes');
 const createAlertsRoutes = require('./routes/alertsRoutes');
+const createHealthAlertsRoutes = require('./routes/healthAlertsRoutes');
+const createUserRoutes = require('./routes/userRoutes');
 const createSystemRoutes = require('./routes/systemRoutes');
 const { setupSocketIO, broadcastSystemStatus } = require('./socketIO');
 const logger = require('./utils/logger');
@@ -47,21 +52,31 @@ const startServer = async () => {
     // Initialize services
     const sensorDataService = new SensorDataService();
     const alertsService = new AlertsService(null, null); // Will attach io and mqttClient after creation
+    const healthAlertService = new HealthAlertService(null); // Will attach io after creation
+
+    // Link services
+    sensorDataService.setHealthAlertService(healthAlertService);
 
     // Initialize controllers
     const sensorDataController = new SensorDataController(sensorDataService);
     const alertsController = new AlertsController(alertsService);
+    const healthAlertsController = new HealthAlertsController(healthAlertService);
+    const userController = new UserController();
     const systemController = new SystemController();
 
     // Initialize routes
     const sensorDataRoutes = createSensorDataRoutes(sensorDataController);
     const alertsRoutes = createAlertsRoutes(alertsController);
+    const healthAlertsRoutes = createHealthAlertsRoutes(healthAlertsController);
+    const userRoutes = createUserRoutes(userController);
     const systemRoutes = createSystemRoutes(systemController);
 
     // Create Express app
     const app = createApp({
       sensorDataRoutes,
       alertsRoutes,
+      healthAlertsRoutes,
+      userRoutes,
       systemRoutes,
     });
 
@@ -99,9 +114,10 @@ const startServer = async () => {
       }),
     });
     
-    // Attach io and mqttClient to alerts service
+    // Attach io and mqttClient to alerts services
     alertsService.io = io;
     alertsService.mqttClient = mqttClient;
+    healthAlertService.setIO(io);
 
     mqttClient.connect();
     systemController.mqttClient = mqttClient;

@@ -9,6 +9,7 @@ const logger = require('./utils/logger');
 const subscriptions = {
   sensorUpdates: new Set(),
   alerts: new Set(),
+  healthAlerts: new Map(), // Maps socket id to classification
 };
 
 const buildSensorPayload = (data) => ({
@@ -74,6 +75,31 @@ const setupSocketIO = (io, options = {}) => {
     });
 
     /**
+     * Listen for client subscription to health alerts by classification
+     * @event subscribe-health-alerts
+     * @param {object} data - {classification: 'asthma_patient' | 'children' | 'elderly' | 'adults'}
+     */
+    socket.on('subscribe-health-alerts', (data) => {
+      const { classification } = data || {};
+
+      if (!classification) {
+        socket.emit('error', {
+          message: 'Classification is required',
+        });
+        return;
+      }
+
+      subscriptions.healthAlerts.set(socket.id, classification);
+      socket.join(`classification_${classification}`);
+      logger.debug(`Client ${socket.id} subscribed to health alerts for ${classification}`);
+      socket.emit('subscription-confirmed', {
+        channel: 'health-alerts',
+        classification,
+        message: `You will now receive health alerts for ${classification}`,
+      });
+    });
+
+    /**
      * Listen for unsubscribe events
      */
     socket.on('unsubscribe', (channel) => {
@@ -81,6 +107,12 @@ const setupSocketIO = (io, options = {}) => {
         subscriptions.sensorUpdates.delete(socket.id);
       } else if (channel === 'alerts') {
         subscriptions.alerts.delete(socket.id);
+      } else if (channel === 'health-alerts') {
+        const classification = subscriptions.healthAlerts.get(socket.id);
+        if (classification) {
+          socket.leave(`classification_${classification}`);
+          subscriptions.healthAlerts.delete(socket.id);
+        }
       }
       logger.debug(`Client ${socket.id} unsubscribed from ${channel}`);
       socket.emit('unsubscription-confirmed', {
@@ -118,6 +150,11 @@ const setupSocketIO = (io, options = {}) => {
     socket.on('disconnect', () => {
       subscriptions.sensorUpdates.delete(socket.id);
       subscriptions.alerts.delete(socket.id);
+      const classification = subscriptions.healthAlerts.get(socket.id);
+      if (classification) {
+        socket.leave(`classification_${classification}`);
+        subscriptions.healthAlerts.delete(socket.id);
+      }
       logger.info(`Client disconnected: ${socket.id}`);
     });
 
@@ -193,9 +230,38 @@ const broadcastSystemStatus = (io, status) => {
   });
 };
 
+/**
+ * Emit health alert to clients subscribed to specific classification
+ * @param {object} io - Socket.IO server instance
+ * @param {string} classification - User classification
+ * @param {object} alert - Alert data
+ */
+const emitHealthAlert = (io, classification, alert) => {
+  const payload = {
+    timestamp: new Date(),
+    alert,
+    classification,
+  };
+
+  // Emit to classification room
+  io.to(`classification_${classification}`).emit('health-alert', payload);
+  
+  logger.debug(`Health alert emitted to classification_${classification}`);
+};
+
+/**
+ * Get active health alert subscriptions for reporting
+ * @returns {object} Map of subscriptions
+ */
+const getHealthAlertSubscriptions = () => {
+  return subscriptions.healthAlerts;
+};
+
 module.exports = {
   setupSocketIO,
   emitSensorUpdate,
   emitAlert,
   broadcastSystemStatus,
+  emitHealthAlert,
+  getHealthAlertSubscriptions,
 };
