@@ -5,6 +5,9 @@
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const THREE_HOURS_MS = 3 * ONE_HOUR_MS;
+const AQI_MAX = 500;
+const MQ_SCORE_MAX = 500;
+const CRI_MAX = 100;
 
 const PM25_BREAKPOINTS = [
   { concentrationLow: 0.0, concentrationHigh: 12.0, aqiLow: 0, aqiHigh: 50 },
@@ -42,10 +45,14 @@ const normalizeTimestamp = (timestamp) => {
 
   let numericTimestamp = toFiniteNumber(timestamp, Date.now());
 
-  // Some devices send timestamps in seconds (small numbers). If the value
-  // looks like seconds (less than 1e12), convert to milliseconds.
-  // 1e12 ms is ~2001-09-09 — current epoch ms values are > 1e12.
-  if (Number.isFinite(numericTimestamp) && numericTimestamp > 0 && numericTimestamp < 1e12) {
+  // Very small positive values are typically device uptime (for example
+  // ESP32 millis()), not wall-clock timestamps. Use server time instead.
+  if (Number.isFinite(numericTimestamp) && numericTimestamp > 0 && numericTimestamp < 1e9) {
+    return Date.now();
+  }
+
+  // Devices may also send epoch seconds. Convert those to milliseconds.
+  if (Number.isFinite(numericTimestamp) && numericTimestamp >= 1e9 && numericTimestamp < 1e12) {
     numericTimestamp = numericTimestamp * 1000;
   }
 
@@ -73,7 +80,7 @@ const calculateAQI = (pm25) => {
       (concentration - breakpoint.concentrationLow) +
     breakpoint.aqiLow;
 
-  return roundToTwoDecimals(clamp(standardAQI, 0, 200));
+  return roundToTwoDecimals(clamp(standardAQI, 0, AQI_MAX));
 };
 
 const computeHumidityFactor = (humidity) => {
@@ -96,9 +103,9 @@ const computeACI = (ppm) => {
 };
 
 const computeUAQS = (aqi, aci) => {
-  const safeAQI = clamp(toFiniteNumber(aqi, 0), 0, 200);
-  const safeACI = clamp(toFiniteNumber(aci, 0), 0, 200);
-  return roundToTwoDecimals((0.6 * safeAQI) + (0.4 * safeACI));
+  const safeAQI = clamp(toFiniteNumber(aqi, 0), 0, AQI_MAX);
+  const safeACI = clamp(toFiniteNumber(aci, 0), 0, MQ_SCORE_MAX);
+  return roundToTwoDecimals((0.7 * safeAQI) + (0.3 * safeACI));
 };
 
 const updateExposure = (uaqs, deltaTimeHours, currentExposure = 0) => {
@@ -124,22 +131,20 @@ const computeRollingAverage = (data, windowSize, currentTimestamp = Date.now()) 
   return roundToTwoDecimals(total / relevantData.length);
 };
 
-const computeCRI = (uaqs, exposureTime, humidityFactor) => {
-  const safeUAQS = Math.max(0, toFiniteNumber(uaqs, 0));
-  const safeExposureTime = Math.max(0, toFiniteNumber(exposureTime, 0));
-  const safeHumidityFactor = Math.max(0, toFiniteNumber(humidityFactor, 1));
-  return roundToTwoDecimals(safeUAQS * safeExposureTime * safeHumidityFactor);
+const computeCRI = (exposure) => {
+  const safeExposure = Math.max(0, toFiniteNumber(exposure, 0));
+  return roundToTwoDecimals(clamp(safeExposure * 10, 0, CRI_MAX));
 };
 
 const determineAlertLevel = (uaqs, cri) => {
   const safeUAQS = toFiniteNumber(uaqs, 0);
   const safeCRI = toFiniteNumber(cri, 0);
 
-  if (safeUAQS > 150 || safeCRI > 200) {
+  if (safeUAQS >= 150 || safeCRI >= 75) {
     return 'HIGH';
   }
 
-  if (safeUAQS > 100 || safeCRI > 100) {
+  if (safeUAQS >= 100 || safeCRI >= 40) {
     return 'MODERATE';
   }
 
@@ -157,20 +162,40 @@ class AirQualityAnalyticsProcessor {
     const timestamp = normalizeTimestamp(reading.timestamp);
     const pm25 = Math.max(0, toFiniteNumber(reading.pm25, 0));
     const mq135_ppm = Math.max(0, toFiniteNumber(reading.mq135_ppm, 0));
+    const mq_score = clamp(
+      toFiniteNumber(reading.mq_score, reading.mq135_ppm),
+      0,
+      MQ_SCORE_MAX
+    );
     const humidity = clamp(toFiniteNumber(reading.humidity, 0), 0, 100);
     const temperature = toFiniteNumber(reading.temperature, 0);
 
-    const aqi = calculateAQI(pm25);
+    const aqi = clamp(
+      toFiniteNumber(reading.aqi, calculateAQI(pm25)),
+      0,
+      AQI_MAX
+    );
     const humidityFactor = computeHumidityFactor(humidity);
-    const correctedPPM = applyHumidityCorrection(mq135_ppm, humidity);
-    const aci = computeACI(correctedPPM);
-    const uaqs = computeUAQS(aqi, aci);
+    const correctedPPM = reading.correctedPPM !== undefined
+      ? Math.max(0, toFiniteNumber(reading.correctedPPM, 0))
+      : (reading.mq_score !== undefined ? mq_score : applyHumidityCorrection(mq135_ppm, humidity));
+    const aci = clamp(
+      toFiniteNumber(reading.aci, reading.mq_score !== undefined ? mq_score : computeACI(correctedPPM)),
+      0,
+      MQ_SCORE_MAX
+    );
+    const uaqs = clamp(
+      toFiniteNumber(reading.uaqs, computeUAQS(aqi, aci)),
+      0,
+      AQI_MAX
+    );
 
     // Debug: log intermediate values so we can reconcile device vs server UAQS
     safeLog('intermediate', {
       timestamp,
       pm25,
       mq135_ppm,
+      mq_score,
       humidity,
       aqi,
       humidityFactor,
@@ -183,7 +208,9 @@ class AirQualityAnalyticsProcessor {
       ? 0
       : Math.max(0, (timestamp - this.previousTimestamp) / ONE_HOUR_MS);
 
-    this.cumulativeExposure = updateExposure(uaqs, deltaTimeHours, this.cumulativeExposure);
+    this.cumulativeExposure = reading.exposure !== undefined
+      ? Math.max(0, toFiniteNumber(reading.exposure, 0))
+      : updateExposure(uaqs, deltaTimeHours, this.cumulativeExposure);
     this.previousTimestamp = timestamp;
 
     this.readings.push({ uaqs, timestamp });
@@ -197,13 +224,18 @@ class AirQualityAnalyticsProcessor {
       ? Math.max(0, (timestamp - threeHourReadings[0].timestamp) / ONE_HOUR_MS)
       : deltaTimeHours;
 
-    const cri = computeCRI(uaqs, exposureTimeHours, humidityFactor);
+    const cri = clamp(
+      toFiniteNumber(reading.cri, computeCRI(this.cumulativeExposure)),
+      0,
+      CRI_MAX
+    );
     const alertLevel = determineAlertLevel(uaqs, cri);
 
     return {
       pm25,
       aqi,
       mq135_ppm: roundToTwoDecimals(mq135_ppm),
+      mq_score: roundToTwoDecimals(mq_score),
       correctedPPM,
       aci,
       uaqs,

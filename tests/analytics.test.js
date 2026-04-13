@@ -15,7 +15,7 @@ describe('analytics module', () => {
   test('calculateAQI converts PM2.5 using capped standard breakpoints', () => {
     expect(calculateAQI(10)).toBeGreaterThan(0);
     expect(calculateAQI(35.4)).toBe(100);
-    expect(calculateAQI(500)).toBe(200);
+    expect(calculateAQI(500)).toBeCloseTo(499.68, 2);
   });
 
   test('applyHumidityCorrection uses requested humidity factor formula', () => {
@@ -32,12 +32,12 @@ describe('analytics module', () => {
   });
 
   test('computeUAQS, exposure, cri, and alert level follow spec', () => {
-    expect(computeUAQS(100, 200)).toBe(140);
+    expect(computeUAQS(100, 200)).toBe(130);
     expect(updateExposure(140, 1.5, 10)).toBe(220);
-    expect(computeCRI(140, 2, 1.1)).toBe(308);
-    expect(determineAlertLevel(140, 308)).toBe('HIGH');
-    expect(determineAlertLevel(110, 50)).toBe('MODERATE');
-    expect(determineAlertLevel(90, 50)).toBe('LOW');
+    expect(computeCRI(7.5)).toBe(75);
+    expect(determineAlertLevel(140, 75)).toBe('HIGH');
+    expect(determineAlertLevel(110, 20)).toBe('MODERATE');
+    expect(determineAlertLevel(90, 30)).toBe('LOW');
   });
 
   test('computeRollingAverage only uses values inside the requested window', () => {
@@ -77,6 +77,29 @@ describe('analytics module', () => {
     expect(second.average_3h_UAQS).toBeGreaterThanOrEqual(second.average_1h_UAQS);
     expect(['LOW', 'MODERATE', 'HIGH']).toContain(second.alertLevel);
   });
+
+  test('processor prefers device-computed metrics when provided', () => {
+    const processor = new AirQualityAnalyticsProcessor();
+
+    const processed = processor.processReading({
+      pm25: 42,
+      aqi: 118,
+      mq_score: 210,
+      uaqs: 145.6,
+      cri: 62,
+      exposure: 5.2,
+      humidity: 58,
+      temperature: 26,
+      timestamp: Date.now(),
+    });
+
+    expect(processed.aqi).toBe(118);
+    expect(processed.mq_score).toBe(210);
+    expect(processed.correctedPPM).toBe(210);
+    expect(processed.uaqs).toBe(145.6);
+    expect(processed.cri).toBe(62);
+    expect(processed.exposure).toBe(5.2);
+  });
 });
 
 describe('sensor data normalization', () => {
@@ -97,5 +120,30 @@ describe('sensor data normalization', () => {
     expect(processed.correctedPPM).toBeGreaterThan(0);
     expect(processed.average_1h_UAQS).toBeDefined();
     expect(processed.average_3h_UAQS).toBeDefined();
+  });
+
+  test('service accepts new esp32 payload fields directly', async () => {
+    const SensorDataService = require('../src/services/SensorDataService');
+    const service = new SensorDataService();
+
+    const processed = await service.processSensorData({
+      pm25: 35,
+      aqi: 99,
+      mq_score: 175,
+      uaqs: 121.8,
+      cri: 48,
+      exposure: 3.7,
+      humidity: 62,
+      temp: 27.1,
+      timestamp: 123456,
+    });
+
+    expect(processed.temperature).toBe(27.1);
+    expect(processed.aqi).toBe(99);
+    expect(processed.mq_score).toBe(175);
+    expect(processed.uaqs).toBe(121.8);
+    expect(processed.cri).toBe(48);
+    expect(processed.exposure).toBe(3.7);
+    expect(processed.timestamp).toBeGreaterThan(Date.now() - 10000);
   });
 });

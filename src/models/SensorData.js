@@ -12,12 +12,17 @@ const SensorDataSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
-      max: 200,
+      max: 500,
     },
     mq135_ppm: {
       type: Number,
       required: true,
       min: 0,
+    },
+    mq_score: {
+      type: Number,
+      min: 0,
+      max: 500,
     },
     correctedPPM: {
       type: Number,
@@ -28,7 +33,7 @@ const SensorDataSchema = new mongoose.Schema(
       type: Number, 
       required: true,
       min: 0,
-      max: 200,
+      max: 500,
     },
     temperature: {
       type: Number,
@@ -49,7 +54,7 @@ const SensorDataSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
-      max: 200,
+      max: 500,
       index: true,
     },
     exposure: {
@@ -71,6 +76,7 @@ const SensorDataSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+      max: 100,
     },
     alertLevel: {
       type: String,

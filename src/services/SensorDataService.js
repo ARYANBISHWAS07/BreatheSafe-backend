@@ -19,7 +19,14 @@ class SensorDataService {
 
       const reading = {
         pm25: sensorData.pm25,
+        aqi: sensorData.aqi,
         mq135_ppm: sensorData.mq135_ppm,
+        mq_score: sensorData.mq_score,
+        correctedPPM: sensorData.correctedPPM,
+        aci: sensorData.aci,
+        uaqs: sensorData.uaqs,
+        cri: sensorData.cri,
+        exposure: sensorData.exposure,
         humidity: sensorData.humidity,
         temperature: sensorData.temperature ?? sensorData.temp,
         timestamp: sensorData.timestamp,

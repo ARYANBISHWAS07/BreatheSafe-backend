@@ -24,18 +24,20 @@ class AlertsService {
       uaqs: sensorData.uaqs,
       cri: sensorData.cri,
       pm25: sensorData.pm25,
+      aqi: sensorData.aqi,
+      mq_score: sensorData.mq_score,
       mq135_ppm: sensorData.mq135_ppm,
     }];
   }
 
   generateAlertMessage(alert) {
-    const { level, uaqs, cri } = alert;
+    const { level, uaqs, cri, aqi } = alert;
 
     if (level === 'HIGH') {
-      return `High air-quality risk detected (UAQS: ${uaqs.toFixed(1)}, CRI: ${cri.toFixed(1)}).`;
+      return `High air-quality risk detected (AQI: ${aqi.toFixed(1)}, UAQS: ${uaqs.toFixed(1)}, CRI: ${cri.toFixed(1)}).`;
     }
 
-    return `Moderate air-quality risk detected (UAQS: ${uaqs.toFixed(1)}, CRI: ${cri.toFixed(1)}).`;
+    return `Moderate air-quality risk detected (AQI: ${aqi.toFixed(1)}, UAQS: ${uaqs.toFixed(1)}, CRI: ${cri.toFixed(1)}).`;
   }
 
   getDetailedRiskAssessment(sensorData) {
@@ -74,6 +76,7 @@ class AlertsService {
           pm25: sensorData.pm25,
           aqi: sensorData.aqi,
           mq135_ppm: sensorData.mq135_ppm,
+          mq_score: sensorData.mq_score,
           correctedPPM: sensorData.correctedPPM,
           aci: sensorData.aci,
           uaqs: sensorData.uaqs,
@@ -159,6 +162,7 @@ class AlertsService {
           pm25: alert.triggerValues?.pm25,
           aqi: alert.triggerValues?.aqi,
           mq135_ppm: alert.triggerValues?.mq135_ppm,
+          mq_score: alert.triggerValues?.mq_score,
           correctedPPM: alert.triggerValues?.correctedPPM,
           aci: alert.triggerValues?.aci,
           uaqs: alert.triggerValues?.uaqs,

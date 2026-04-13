@@ -326,11 +326,15 @@ const HEALTH_EFFECTS = {
  */
 const getHealthEffects = (classification, metric, severity) => {
   const classificationEffects = HEALTH_EFFECTS[classification];
-  if (!classificationEffects || !classificationEffects[metric]) {
+  const metricKey = classificationEffects?.[metric]
+    ? metric
+    : (metric === 'mq_score' ? 'uaqs' : metric);
+
+  if (!classificationEffects || !classificationEffects[metricKey]) {
     return null;
   }
 
-  return classificationEffects[metric][severity] || null;
+  return classificationEffects[metricKey][severity] || null;
 };
 
 /**
@@ -399,6 +403,7 @@ const getAlertTitle = (classification, metric, severity) => {
     pm25: 'PM2.5 Level',
     aqi: 'Air Quality Index',
     mq135_ppm: 'Gas Concentration',
+    mq_score: 'Gas Score',
     uaqs: 'Unified Air Quality',
     cri: 'Risk Index',
     temperature: 'Temperature',

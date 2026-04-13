@@ -60,6 +60,7 @@ const AlertSchema = new mongoose.Schema(
       pm25: Number,
       aqi: Number,
       mq135_ppm: Number,
+      mq_score: Number,
       correctedPPM: Number,
       aci: Number,
       uaqs: Number,

@@ -131,12 +131,18 @@ class MQTTClient {
         mapped.temperature = mapped.temp;
       }
 
-      // Common alias: mq_score or mq -> mq135_ppm
+      // Preserve the new gas score field while still backfilling legacy names.
+      if (mapped.mq_score === undefined && mapped.mq135_ppm !== undefined) {
+        mapped.mq_score = mapped.mq135_ppm;
+      }
       if (mapped.mq_score !== undefined && mapped.mq135_ppm === undefined) {
         mapped.mq135_ppm = mapped.mq_score;
       }
       if (mapped.mq !== undefined && mapped.mq135_ppm === undefined) {
         mapped.mq135_ppm = mapped.mq;
+      }
+      if (mapped.mq !== undefined && mapped.mq_score === undefined) {
+        mapped.mq_score = mapped.mq;
       }
 
       // Do not normalize timestamps here; `normalizeTimestamp` in the

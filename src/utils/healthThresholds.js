@@ -21,12 +21,12 @@ const HEALTH_THRESHOLDS = {
       danger: 150,
       description: 'Air Quality Index'
     },
-    mq135_ppm: {
+    mq_score: {
       safe: 100,
       caution: 200,
       warning: 400,
       danger: 600,
-      description: 'MQ135 Gas Sensor PPM'
+      description: 'Normalized MQ135 gas score'
     },
     uaqs: {
       safe: 40,
@@ -70,12 +70,12 @@ const HEALTH_THRESHOLDS = {
       danger: 180,
       description: 'Air Quality Index'
     },
-    mq135_ppm: {
+    mq_score: {
       safe: 150,
       caution: 300,
       warning: 500,
       danger: 800,
-      description: 'MQ135 Gas Sensor PPM'
+      description: 'Normalized MQ135 gas score'
     },
     uaqs: {
       safe: 50,
@@ -119,12 +119,12 @@ const HEALTH_THRESHOLDS = {
       danger: 140,
       description: 'Air Quality Index'
     },
-    mq135_ppm: {
+    mq_score: {
       safe: 80,
       caution: 150,
       warning: 300,
       danger: 500,
-      description: 'MQ135 Gas Sensor PPM'
+      description: 'Normalized MQ135 gas score'
     },
     uaqs: {
       safe: 35,
@@ -168,12 +168,12 @@ const HEALTH_THRESHOLDS = {
       danger: 200,
       description: 'Air Quality Index'
     },
-    mq135_ppm: {
+    mq_score: {
       safe: 200,
       caution: 400,
       warning: 700,
       danger: 1000,
-      description: 'MQ135 Gas Sensor PPM'
+      description: 'Normalized MQ135 gas score'
     },
     uaqs: {
       safe: 60,
@@ -245,14 +245,16 @@ const determineAlertLevelByClassification = (classification, sensorData) => {
     }
   }
 
-  // Check MQ135 PPM
-  if (sensorData.correctedPPM !== undefined) {
-    const severity = checkThreshold(sensorData.correctedPPM, thresholds.mq135_ppm);
+  // Check MQ score / legacy gas metric
+  const gasValue = sensorData.mq_score ?? sensorData.correctedPPM ?? sensorData.mq135_ppm;
+  const gasThresholds = thresholds.mq_score ?? thresholds.mq135_ppm;
+  if (gasValue !== undefined && gasThresholds) {
+    const severity = checkThreshold(gasValue, gasThresholds);
     if (severity > 0) {
       breachedThresholds.push({
-        metric: 'mq135_ppm',
-        value: sensorData.correctedPPM,
-        thresholds: thresholds.mq135_ppm,
+        metric: 'mq_score',
+        value: gasValue,
+        thresholds: gasThresholds,
         severity: ['caution', 'warning', 'danger'][severity - 1]
       });
       maxSeverity = Math.max(maxSeverity, severity);
