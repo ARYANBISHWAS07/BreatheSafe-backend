@@ -121,10 +121,31 @@ class MQTTClient {
         return;
       }
 
-      logger.debug('Processing payload:', JSON.stringify(payload));
+      // Map common device field aliases to canonical field names so the
+      // analytics and storage layers always receive the expected keys.
+      // This helps when devices use different naming conventions.
+      const mapped = { ...payload };
+
+      // Common alias: temp -> temperature
+      if (mapped.temp !== undefined && mapped.temperature === undefined) {
+        mapped.temperature = mapped.temp;
+      }
+
+      // Common alias: mq_score or mq -> mq135_ppm
+      if (mapped.mq_score !== undefined && mapped.mq135_ppm === undefined) {
+        mapped.mq135_ppm = mapped.mq_score;
+      }
+      if (mapped.mq !== undefined && mapped.mq135_ppm === undefined) {
+        mapped.mq135_ppm = mapped.mq;
+      }
+
+      // Do not normalize timestamps here; `normalizeTimestamp` in the
+      // analytics processor will handle seconds->ms conversion centrally.
+
+      logger.debug('Processing payload (mapped):', JSON.stringify(mapped));
 
       // Process the data
-      const processedData = await this.sensorDataService.processSensorData(payload);
+      const processedData = await this.sensorDataService.processSensorData(mapped);
 
       if (!processedData) {
         logger.warn('Failed to process sensor data');

@@ -17,6 +17,17 @@ const PM25_BREAKPOINTS = [
 
 const roundToTwoDecimals = (value) => Math.round(value * 100) / 100;
 
+// Lightweight logger - prefer central logger but keep dependency-free for utils
+const safeLog = (tag, obj) => {
+  try {
+    /* eslint-disable no-console */
+    console.debug(`[analytics] ${tag}:`, typeof obj === 'object' ? JSON.stringify(obj) : obj);
+    /* eslint-enable no-console */
+  } catch (e) {
+    // ignore logging errors
+  }
+};
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 const toFiniteNumber = (value, fallback = 0) => {
@@ -29,7 +40,15 @@ const normalizeTimestamp = (timestamp) => {
     return timestamp.getTime();
   }
 
-  const numericTimestamp = toFiniteNumber(timestamp, Date.now());
+  let numericTimestamp = toFiniteNumber(timestamp, Date.now());
+
+  // Some devices send timestamps in seconds (small numbers). If the value
+  // looks like seconds (less than 1e12), convert to milliseconds.
+  // 1e12 ms is ~2001-09-09 — current epoch ms values are > 1e12.
+  if (Number.isFinite(numericTimestamp) && numericTimestamp > 0 && numericTimestamp < 1e12) {
+    numericTimestamp = numericTimestamp * 1000;
+  }
+
   return numericTimestamp > 0 ? numericTimestamp : Date.now();
 };
 
@@ -146,6 +165,19 @@ class AirQualityAnalyticsProcessor {
     const correctedPPM = applyHumidityCorrection(mq135_ppm, humidity);
     const aci = computeACI(correctedPPM);
     const uaqs = computeUAQS(aqi, aci);
+
+    // Debug: log intermediate values so we can reconcile device vs server UAQS
+    safeLog('intermediate', {
+      timestamp,
+      pm25,
+      mq135_ppm,
+      humidity,
+      aqi,
+      humidityFactor,
+      correctedPPM,
+      aci,
+      uaqs,
+    });
 
     const deltaTimeHours = this.previousTimestamp === null
       ? 0
