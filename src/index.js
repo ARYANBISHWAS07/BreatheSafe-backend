@@ -83,7 +83,7 @@ const startServer = async () => {
     // Create HTTP server with Socket.IO
     const httpServer = http.createServer(app);
     // Parse SOCKET_IO_CORS environment variable to support multiple origins
-    const corsOriginString = process.env.SOCKET_IO_CORS || "http://localhost:3000";
+    const corsOriginString = process.env.SOCKET_IO_CORS || "http://localhost:3001,http://localhost:3000";
     const socketIOCorsOrigins = corsOriginString.split(",").map(origin => origin.trim());
     
     const io = new Server(httpServer, {

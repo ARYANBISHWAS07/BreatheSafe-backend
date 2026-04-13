@@ -51,7 +51,7 @@ services:
       MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_TOPIC: air-quality/data
       LOG_LEVEL: info
-      SOCKET_IO_CORS: http://localhost:3000
+      SOCKET_IO_CORS: http://localhost:3001,http://localhost:3000
     depends_on:
       mongodb:
         condition: service_healthy
