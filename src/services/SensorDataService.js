@@ -44,9 +44,19 @@ class SensorDataService {
 
   async saveSensorData(processedData) {
     try {
+      // Compute a "latest" timestamp (+5 seconds) and an IST representation
+      const latestTsMs = Number(processedData.timestamp) + 5000;
+      const latestTimestamp = new Date(latestTsMs);
+
+      // Build an IST ISO-like string by adding the +05:30 offset
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      const latestTimestampIST = new Date(latestTsMs + IST_OFFSET_MS).toISOString().replace('Z', '+05:30');
+
       const sensorData = new SensorData({
         ...processedData,
         recordedAt: new Date(processedData.timestamp),
+        latestTimestamp,
+        latestTimestampIST,
       });
 
       const saved = await sensorData.save();

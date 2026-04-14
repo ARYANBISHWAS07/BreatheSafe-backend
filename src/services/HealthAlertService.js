@@ -5,7 +5,6 @@
 
 const logger = require('../utils/logger');
 const Alert = require('../models/Alert');
-const User = require('../models/User');
 const {
   determineAlertLevelByClassification,
   getAvailableClassifications
@@ -212,26 +211,6 @@ class HealthAlertService {
       return alerts;
     } catch (error) {
       logger.error(`Error fetching alerts for ${classification}: ${error.message}`);
-      return [];
-    }
-  }
-
-  /**
-   * Get alerts for specific user
-   * @param {string} userId - User ID
-   * @param {number} limit - Max alerts
-   * @returns {array} Array of alerts
-   */
-  async getAlertsForUser(userId, limit = 50) {
-    try {
-      const user = await User.findById(userId);
-      if (!user) {
-        throw new Error('User not found');
-      }
-
-      return this.getAlertsForClassification(user.classification, limit);
-    } catch (error) {
-      logger.error(`Error fetching alerts for user ${userId}: ${error.message}`);
       return [];
     }
   }

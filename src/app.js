@@ -58,9 +58,6 @@ const createApp = (controllers) => {
   if (controllers.healthAlertsRoutes) {
     apiRouter.use(controllers.healthAlertsRoutes);
   }
-  if (controllers.userRoutes) {
-    apiRouter.use(controllers.userRoutes);
-  }
   if (controllers.systemRoutes) {
     apiRouter.use(controllers.systemRoutes);
   }

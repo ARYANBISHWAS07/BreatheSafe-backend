@@ -1,6 +1,9 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <DHT.h>
+#include <math.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
 // ================= WIFI =================
 const char* ssid = "12345678";
@@ -14,16 +17,21 @@ const char* topic = "air-quality/data";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
+// ================= LCD =================
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
 // ================= SENSORS =================
 #define MQ135_PIN 34
 #define DHT_PIN 27
 #define DHT_TYPE DHT11
 
+#define DUST_LED_PIN 25
+#define DUST_SENSOR_PIN 35
+
 DHT dht(DHT_PIN, DHT_TYPE);
-HardwareSerial pmSerial(2);
 
 // ================= FILTER =================
-#define WINDOW 5
+#define WINDOW 6
 float pmBuf[WINDOW] = {0};
 float mqBuf[WINDOW] = {0};
 int bufIndex = 0;
@@ -32,22 +40,31 @@ int bufIndex = 0;
 unsigned long lastSend = 0;
 const int interval = 5000;
 
+int screenIndex = 0;
+unsigned long lastScreenChange = 0;
+
 // ================= EXPOSURE =================
 float exposure = 0;
 unsigned long lastTime = 0;
-
-// ================= PM CACHE =================
-float lastPM = 0;
 
 // ================= SETUP =================
 void setup() {
   Serial.begin(115200);
 
   dht.begin();
-  pmSerial.begin(9600, SERIAL_8N1, 16, 17);
+  pinMode(DUST_LED_PIN, OUTPUT);
 
   setupWiFi();
   client.setServer(mqtt_server, mqtt_port);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Air Monitor");
+  lcd.setCursor(0, 1);
+  lcd.print("Calibrated");
+  delay(1500);
+  lcd.clear();
 
   lastTime = millis();
 }
@@ -63,160 +80,160 @@ void loop() {
     lastSend = now;
 
     float pm25 = readPM25();
-    float mq135ppm = readMQ135PPM();
+    float mqRaw = analogRead(MQ135_PIN);
 
     float temp = dht.readTemperature();
     float humidity = dht.readHumidity();
 
-    if (isnan(temp) || isnan(humidity)) {
-      Serial.println("DHT ERROR");
-      return;
-    }
+    if (isnan(temp) || isnan(humidity)) return;
 
     // ================= FILTER =================
     pm25 = movingAverage(pmBuf, pm25);
-    mq135ppm = movingAverage(mqBuf, mq135ppm);
+    mqRaw = movingAverage(mqBuf, mqRaw);
     bufIndex = (bufIndex + 1) % WINDOW;
 
-    // ================= HUMIDITY =================
-    float hFactor = humidityFactor(humidity);
-    float correctedPPM = mq135ppm * hFactor;
+    // ================= MQ (FIXED SCALING) =================
+    float mqScore = (mqRaw / 600.0) * 100.0;
+    mqScore = constrain(mqScore, 0, 150);
 
-    // ================= CALCULATIONS =================
+    // ================= AQI =================
     float aqi = computeAQI(pm25);
-    float aci = computeACI(correctedPPM);
-    float uaqs = computeUAQS(aqi, aci);
+    String category = getAQICategory(aqi);
 
+    float uaqs = 0.9 * aqi + 0.1 * mqScore;
+
+    // ================= EXPOSURE =================
     float deltaTime = (now - lastTime) / 3600000.0;
     lastTime = now;
 
-    // Exposure with decay (stable)
-    exposure = 0.9 * exposure + (uaqs * deltaTime);
+    float decay = exp(-deltaTime);
+    exposure = exposure * decay + (uaqs * deltaTime);
 
-    // ✅ FIXED CRI
-    float cri = computeCRI(exposure, hFactor);
+    float cri = constrain(exposure * 10.0, 0, 100);
 
-    // ================= JSON =================
+    // ================= MQTT =================
     String payload = "{";
     payload += "\"pm25\":" + String(pm25, 2) + ",";
     payload += "\"aqi\":" + String(aqi, 2) + ",";
-    payload += "\"mq135_ppm\":" + String(correctedPPM, 2) + ",";
-    payload += "\"aci\":" + String(aci, 2) + ",";
+    payload += "\"mq_score\":" + String(mqScore, 2) + ",";
     payload += "\"uaqs\":" + String(uaqs, 2) + ",";
     payload += "\"cri\":" + String(cri, 2) + ",";
     payload += "\"temp\":" + String(temp, 2) + ",";
     payload += "\"humidity\":" + String(humidity, 2) + ",";
-    payload += "\"exposure\":" + String(exposure, 2) + ",";
+    payload += "\"exposure\":" + String(exposure, 4) + ",";
     payload += "\"timestamp\":" + String(millis());
     payload += "}";
 
-    Serial.println("---- MQTT DEBUG ----");
     Serial.println(payload);
-
     client.publish(topic, payload.c_str());
-  }
-}
 
-// ================= WIFI =================
-void setupWiFi() {
-  Serial.println("Connecting WiFi...");
-  WiFi.begin(ssid, password);
+    // ================= LCD =================
+    if (millis() - lastScreenChange > 3000) {
+      lastScreenChange = millis();
+      screenIndex = (screenIndex + 1) % 3;
+      lcd.clear();
+    }
 
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
+    if (screenIndex == 0) {
+      lcd.setCursor(0, 0);
+      lcd.print("AQI:");
+      lcd.print((int)aqi);
+      lcd.print(" ");
+      lcd.print(category.substring(0, 6));
 
-  Serial.println("\nWiFi Connected");
-}
+      lcd.setCursor(0, 1);
+      lcd.print("PM:");
+      lcd.print((int)pm25);
+      lcd.print(" ug");
+    } 
+    else if (screenIndex == 1) {
+      lcd.setCursor(0, 0);
+      lcd.print("Temp:");
+      lcd.print(temp, 1);
+      lcd.print("C");
 
-// ================= MQTT =================
-void reconnectMQTT() {
-  while (!client.connected()) {
-    Serial.print("Connecting MQTT...");
+      lcd.setCursor(0, 1);
+      lcd.print("Hum:");
+      lcd.print((int)humidity);
+      lcd.print("%");
+    } 
+    else {
+      lcd.setCursor(0, 0);
+      lcd.print("Gas:");
+      lcd.print((int)mqScore);
 
-    String clientId = "ESP32-" + String(random(10000));
-
-    if (client.connect(clientId.c_str())) {
-      Serial.println("connected");
-    } else {
-      Serial.println("retry...");
-      delay(3000);
+      lcd.setCursor(0, 1);
+      lcd.print("CRI:");
+      lcd.print((int)cri);
     }
   }
 }
 
 // ================= PM2.5 =================
 float readPM25() {
-  if (pmSerial.available() >= 32) {
-    uint8_t buffer[32];
-    pmSerial.readBytes(buffer, 32);
+  float sum = 0;
 
-    if (buffer[0] == 0x42 && buffer[1] == 0x4D) {
-      int pm25 = (buffer[12] << 8) | buffer[13];
-      lastPM = pm25;
-      return pm25;
-    }
+  for (int i = 0; i < 10; i++) {
+    digitalWrite(DUST_LED_PIN, LOW);
+    delayMicroseconds(300);
+
+    int raw = analogRead(DUST_SENSOR_PIN);
+    sum += raw;
+
+    digitalWrite(DUST_LED_PIN, HIGH);
+    delayMicroseconds(10000);
   }
-  return lastPM; // fallback
+
+  float avgRaw = sum / 10.0;
+  float voltage = avgRaw * (3.3 / 4095.0);
+
+  // 🔥 FINAL CALIBRATED OFFSET (based on your real readings)
+  float dustDensity = (voltage - 0.10) * 1000.0;
+
+  if (dustDensity < 0) dustDensity = 0;
+
+  return dustDensity;
 }
 
-// ================= MQ135 =================
-float readMQ135PPM() {
-  int raw = analogRead(MQ135_PIN);
-  float voltage = raw * (3.3 / 4095.0);
+// ================= CORRECT AQI =================
+float computeAQI(float pm) {
+  float Ihi, Ilo, BPhi, BPlo;
 
-  if (voltage <= 0.1) return 0;
+  if (pm <= 12) { BPlo=0; BPhi=12; Ilo=0; Ihi=50; }
+  else if (pm <= 35.4) { BPlo=12.1; BPhi=35.4; Ilo=51; Ihi=100; }
+  else if (pm <= 55.4) { BPlo=35.5; BPhi=55.4; Ilo=101; Ihi=150; }
+  else if (pm <= 150.4) { BPlo=55.5; BPhi=150.4; Ilo=151; Ihi=200; }
+  else { BPlo=150.5; BPhi=250.4; Ilo=201; Ihi=300; }
 
-  float RL = 10.0;
-  float Rs = ((3.3 - voltage) / voltage) * RL;
+  return ((Ihi - Ilo)/(BPhi - BPlo)) * (pm - BPlo) + Ilo;
+}
 
-  float R0 = 10.0; // TODO: calibrate properly
-
-  float ratio = Rs / R0;
-
-  float ppm = 116.6020682 * pow(ratio, -2.769034857);
-
-  return ppm;
+// ================= CATEGORY =================
+String getAQICategory(float aqi) {
+  if (aqi <= 50) return "Good";
+  else if (aqi <= 100) return "Moderate";
+  else if (aqi <= 150) return "Unhealthy";
+  else return "Bad";
 }
 
 // ================= FILTER =================
 float movingAverage(float *buffer, float value) {
   buffer[bufIndex] = value;
-
   float sum = 0;
   for (int i = 0; i < WINDOW; i++) sum += buffer[i];
-
   return sum / WINDOW;
 }
 
-// ================= HUMIDITY =================
-float humidityFactor(float h) {
-  float f = 1 + (h - 65.0) * 0.01;
-  return constrain(f, 0.8, 1.2);
+// ================= WIFI =================
+void setupWiFi() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
 }
 
-// ================= AQI =================
-float computeAQI(float pm25) {
-  if (pm25 <= 12) return (50.0 / 12.0) * pm25;
-  else if (pm25 <= 35.4) return 50 + (pm25 - 12) * (50 / (35.4 - 12));
-  else return 100 + (pm25 - 35.4) * (100 / (150.4 - 35.4));
-}
-
-// ================= ACI =================
-float computeACI(float ppm) {
-  if (ppm < 50) return 50;
-  else if (ppm < 100) return 100;
-  else if (ppm < 200) return 150;
-  else return 200;
-}
-
-// ================= UAQS =================
-float computeUAQS(float aqi, float aci) {
-  return (0.6 * aqi) + (0.4 * aci);
-}
-
-// ================= CRI =================
-float computeCRI(float exposure, float hFactor) {
-  return exposure * hFactor;
+// ================= MQTT =================
+void reconnectMQTT() {
+  while (!client.connected()) {
+    String clientId = "ESP32-" + String(random(10000));
+    if (!client.connect(clientId.c_str())) delay(3000);
+  }
 }

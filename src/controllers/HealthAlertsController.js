@@ -178,49 +178,6 @@ class HealthAlertsController {
   }
 
   /**
-   * GET /api/health-alerts/by-user/:userId
-   * Get health alerts for specific user
-   */
-  async getAlertsForUser(req, res) {
-    try {
-      const { userId } = req.params;
-      const { limit = 50 } = req.query;
-
-      if (!userId) {
-        return res.status(400).json({
-          success: false,
-          error: 'User ID is required'
-        });
-      }
-
-      const alerts = await this.healthAlertService.getAlertsForUser(
-        userId,
-        Math.min(parseInt(limit), 500)
-      );
-
-      return res.json({
-        success: true,
-        data: alerts,
-        count: alerts.length
-      });
-    } catch (error) {
-      logger.error(`Error in getAlertsForUser: ${error.message}`);
-
-      if (error.message === 'User not found') {
-        return res.status(404).json({
-          success: false,
-          error: 'User not found'
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        error: 'Internal server error'
-      });
-    }
-  }
-
-  /**
    * GET /api/health-alerts/classification/:classification/unacknowledged
    * Get unacknowledged alerts for classification
    */

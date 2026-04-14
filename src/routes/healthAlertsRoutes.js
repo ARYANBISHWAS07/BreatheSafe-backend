@@ -41,14 +41,6 @@ const createHealthAlertsRoutes = (healthAlertsController) => {
   });
 
   /**
-   * GET /api/health-alerts/by-user/:userId
-   * Get alerts for specific user
-   */
-  router.get('/health-alerts/by-user/:userId', (req, res) => {
-    healthAlertsController.getAlertsForUser(req, res);
-  });
-
-  /**
    * GET /api/health-alerts/classification/:classification/unacknowledged
    * Get unacknowledged alerts for classification
    */

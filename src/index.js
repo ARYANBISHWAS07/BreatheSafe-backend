@@ -25,12 +25,10 @@ const HealthAlertService = require('./services/HealthAlertService');
 const SensorDataController = require('./controllers/SensorDataController');
 const AlertsController = require('./controllers/AlertsController');
 const HealthAlertsController = require('./controllers/HealthAlertsController');
-const UserController = require('./controllers/UserController');
 const SystemController = require('./controllers/SystemController');
 const createSensorDataRoutes = require('./routes/sensorDataRoutes');
 const createAlertsRoutes = require('./routes/alertsRoutes');
 const createHealthAlertsRoutes = require('./routes/healthAlertsRoutes');
-const createUserRoutes = require('./routes/userRoutes');
 const createSystemRoutes = require('./routes/systemRoutes');
 const { setupSocketIO, broadcastSystemStatus } = require('./socketIO');
 const logger = require('./utils/logger');
@@ -61,14 +59,12 @@ const startServer = async () => {
     const sensorDataController = new SensorDataController(sensorDataService);
     const alertsController = new AlertsController(alertsService);
     const healthAlertsController = new HealthAlertsController(healthAlertService);
-    const userController = new UserController();
     const systemController = new SystemController();
 
     // Initialize routes
     const sensorDataRoutes = createSensorDataRoutes(sensorDataController);
     const alertsRoutes = createAlertsRoutes(alertsController);
     const healthAlertsRoutes = createHealthAlertsRoutes(healthAlertsController);
-    const userRoutes = createUserRoutes(userController);
     const systemRoutes = createSystemRoutes(systemController);
 
     // Create Express app
@@ -76,7 +72,6 @@ const startServer = async () => {
       sensorDataRoutes,
       alertsRoutes,
       healthAlertsRoutes,
-      userRoutes,
       systemRoutes,
     });
 
